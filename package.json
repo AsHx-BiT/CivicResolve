@@ -1,0 +1,20 @@
+{
+  "name": "civicresolve",
+  "private": true,
+  "workspaces": ["frontend", "backend"],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm --workspace backend run dev",
+    "dev:web": "npm --workspace frontend run dev",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "db:generate": "npm --workspace backend run db:generate",
+    "db:migrate": "npm --workspace backend run db:migrate",
+    "db:deploy": "npm --workspace backend run db:deploy",
+    "db:seed": "npm --workspace backend run db:seed",
+    "db:start-local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-postgres.ps1",
+    "automation:run": "npm --workspace backend run automation:run",
+    "automation:scheduler": "npm --workspace backend run automation:scheduler",
+    "test": "npm --workspace backend test"
+  },
+  "devDependencies": { "concurrently": "^9.2.1" }
+}

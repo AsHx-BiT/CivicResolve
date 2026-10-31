@@ -1,0 +1,39 @@
+{
+  "name": "@civicresolve/backend",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "db:generate": "dotenv -e ../.env -- prisma generate --schema ../prisma/schema.prisma",
+    "db:migrate": "dotenv -e ../.env -- prisma migrate dev --schema ../prisma/schema.prisma",
+    "db:deploy": "dotenv -e ../.env -- prisma migrate deploy --schema ../prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "automation:run": "tsx src/automation-job.ts --once",
+    "automation:scheduler": "tsx src/automation-job.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "multer": "^2.4.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^24.7.2",
+    "@types/supertest": "^6.0.3",
+    "dotenv-cli": "^10.0.0",
+    "prisma": "^6.19.0",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

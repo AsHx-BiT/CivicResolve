@@ -1,0 +1,592 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ComplaintStatus {
+  SUBMITTED
+  IN_REVIEW
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ComplaintSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+// Legacy foundation models remain tenant-scoped for migration compatibility.
+model Department {
+  id             String           @id @default(cuid())
+  organizationId String
+  regionId       String
+  name           String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  region         Region            @relation(fields: [organizationId, regionId], references: [organizationId, id], onDelete: Restrict)
+  complaints     Complaint[]
+  teams          Team[]
+  assignments    Assignment[]
+  users          User[]
+  cases          ComplaintCase[]
+  routingRules   RoutingRule[]
+  slaPolicies    SLAPolicy[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name])
+  @@index([organizationId, regionId])
+}
+
+model Complaint {
+  id                String            @id @default(cuid())
+  organizationId    String
+  referenceNumber   String
+  title             String
+  description       String            @db.Text
+  category          String
+  status            ComplaintStatus   @default(SUBMITTED)
+  priority          ComplaintPriority @default(MEDIUM)
+  residentName      String
+  residentEmail     String
+  location          String?
+  departmentId      String?
+  department        Department?       @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, referenceNumber])
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, departmentId])
+}
+
+model Organization {
+  id          String              @id @default(cuid())
+  slug        String              @unique
+  name        String
+  timezone    String              @default("Asia/Kolkata")
+  isActive    Boolean             @default(true)
+  regions     Region[]
+  departments Department[]
+  teams       Team[]
+  users       User[]
+  roles       Role[]
+  rolePermissions RolePermission[]
+  citizenProfiles CitizenProfile[]
+  categories  Category[]
+  cases       ComplaintCase[]
+  legacyCases Complaint[]
+  sessions    UserSession[]
+  routingRules RoutingRule[]
+  slaPolicies SLAPolicy[]
+  fallbackTeamId String?
+  fallbackTeam Team? @relation("OrganizationFallbackTeam", fields: [id, fallbackTeamId], references: [organizationId, id], onDelete: Restrict)
+  auditLogs AuditLog[]
+  automationRuns AutomationRun[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([id])
+}
+
+model Region {
+  id             String       @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  departments    Department[]
+  cases          ComplaintCase[]
+  routingRules   RoutingRule[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId, name])
+}
+
+model Team {
+  id             String           @id @default(cuid())
+  organizationId String
+  departmentId   String
+  code           String
+  name           String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  department     Department       @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  members        TeamMembership[]
+  assignments    Assignment[]
+  routingRules   RoutingRule[]
+  fallbackOrganizations Organization[] @relation("OrganizationFallbackTeam")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId, departmentId])
+}
+
+model User {
+  id                String            @id @default(cuid())
+  organizationId    String
+  email             String
+  passwordHash      String
+  fullName          String
+  phone             String?
+  departmentId      String?
+  status            UserStatus        @default(ACTIVE)
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  department        Department?       @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  roles             UserRole[]
+  citizenProfile    CitizenProfile?
+  teamMemberships   TeamMembership[]
+  sessions          UserSession[]
+  createdCases      ComplaintCase[]   @relation("CaseCreator")
+  assignmentsMade   Assignment[]      @relation("AssignmentActor")
+  assignmentsTo     Assignment[]      @relation("AssignmentRecipient")
+  comments          Comment[]
+  uploadedFiles     Attachment[]
+  statusChanges     StatusHistory[]
+  escalations       Escalation[]      @relation("EscalationActor")
+  notifications     Notification[]
+  auditEvents       AuditLog[]        @relation("AuditActor")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, email])
+  @@index([organizationId, status, fullName])
+  @@index([organizationId, departmentId])
+}
+
+model Role {
+  id             String           @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  description    String?
+  isSystem       Boolean          @default(false)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  permissions    RolePermission[]
+  users          UserRole[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId, name])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  description String
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  id             String       @id @default(cuid())
+  organizationId String
+  roleId         String
+  permissionId   String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role           Role         @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Cascade)
+  permission     Permission   @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, roleId, permissionId])
+  @@index([organizationId, permissionId])
+}
+
+model UserRole {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String
+  roleId         String
+  user           User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade)
+  role           Role         @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, userId, roleId])
+  @@index([organizationId, roleId])
+}
+
+model TeamMembership {
+  id             String       @id @default(cuid())
+  organizationId String
+  teamId         String
+  userId         String
+  team           Team         @relation(fields: [organizationId, teamId], references: [organizationId, id], onDelete: Cascade)
+  user           User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, teamId, userId])
+  @@index([organizationId, userId])
+}
+
+model UserSession {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String
+  tokenHash      String       @unique
+  csrfHash       String
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  userAgent      String?
+  ipAddress      String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, userId, expiresAt])
+  @@index([expiresAt])
+}
+
+model CitizenProfile {
+  id             String          @id @default(cuid())
+  organizationId String
+  userId         String
+  address        String?
+  regionCode     String?
+  language       String          @default("en")
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user           User            @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade)
+  cases          ComplaintCase[]
+  feedback       Feedback[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, userId])
+  @@index([organizationId, regionCode])
+}
+
+model Category {
+  id             String          @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  isActive       Boolean         @default(true)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subcategories Subcategory[]
+  cases          ComplaintCase[]
+  slaPolicies    SLAPolicy[]
+  routingRules   RoutingRule[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive, name])
+}
+
+model Subcategory {
+  id             String          @id @default(cuid())
+  organizationId String
+  categoryId     String
+  code           String
+  name           String
+  isActive       Boolean         @default(true)
+  category       Category        @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Cascade)
+  cases          ComplaintCase[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, categoryId, id])
+  @@unique([organizationId, categoryId, code])
+  @@index([organizationId, categoryId, isActive])
+}
+
+model ComplaintCase {
+  id                String            @id @default(cuid())
+  organizationId    String
+  referenceNumber   String
+  title             String
+  description       String            @db.Text
+  status            ComplaintStatus   @default(SUBMITTED)
+  priority          ComplaintPriority @default(MEDIUM)
+  severity          ComplaintSeverity @default(MEDIUM)
+  citizenProfileId  String
+  createdByUserId   String
+  categoryId        String
+  subcategoryId     String?
+  departmentId      String?
+  regionId          String?
+  wardCode          String?
+  location          String?
+  latitude          Float?
+  longitude         Float?
+  slaDueAt          DateTime?
+  slaStartedAt      DateTime?
+  slaPolicyId       String?
+  slaPolicyNameSnapshot String?
+  slaPolicySnapshot Json?
+  slaDurationMinutesSnapshot Int?
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  citizenProfile    CitizenProfile    @relation(fields: [organizationId, citizenProfileId], references: [organizationId, id], onDelete: Restrict)
+  createdBy         User              @relation("CaseCreator", fields: [organizationId, createdByUserId], references: [organizationId, id], onDelete: Restrict)
+  category          Category          @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
+  subcategory       Subcategory?      @relation(fields: [organizationId, categoryId, subcategoryId], references: [organizationId, categoryId, id], onDelete: Restrict)
+  department        Department?       @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  region            Region?           @relation(fields: [organizationId, regionId], references: [organizationId, id], onDelete: Restrict)
+  slaPolicy         SLAPolicy?        @relation(fields: [organizationId, slaPolicyId], references: [organizationId, id], onDelete: Restrict)
+  assignments       Assignment[]
+  escalations       Escalation[]
+  comments          Comment[]
+  attachments       Attachment[]
+  statusHistory     StatusHistory[]
+  notifications     Notification[]
+  auditEvents       AuditLog[]        @relation("CaseAudit")
+  feedback          Feedback?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, referenceNumber])
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, priority, createdAt])
+  @@index([organizationId, citizenProfileId, createdAt])
+  @@index([organizationId, departmentId, status])
+  @@index([organizationId, categoryId, createdAt])
+  @@index([organizationId, slaDueAt])
+  @@index([organizationId, regionId, wardCode])
+}
+
+model Assignment {
+  id                String        @id @default(cuid())
+  organizationId    String
+  caseId            String
+  assignedToUserId  String?
+  teamId            String?
+  departmentId      String?
+  assignedByUserId  String?
+  note              String?
+  assignedAt        DateTime      @default(now())
+  endedAt           DateTime?
+  complaintCase     ComplaintCase @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Cascade)
+  assignedTo        User?         @relation("AssignmentRecipient", fields: [organizationId, assignedToUserId], references: [organizationId, id], onDelete: Restrict)
+  assignedBy        User?         @relation("AssignmentActor", fields: [organizationId, assignedByUserId], references: [organizationId, id], onDelete: Restrict)
+  team              Team?         @relation(fields: [organizationId, teamId], references: [organizationId, id], onDelete: Restrict)
+  department        Department?   @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  routingRuleId     String?
+  routingRule       RoutingRule?  @relation(fields: [organizationId, routingRuleId], references: [organizationId, id], onDelete: Restrict)
+  createdAt         DateTime      @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId, caseId, endedAt])
+  @@index([organizationId, assignedToUserId, endedAt])
+  @@index([organizationId, teamId, endedAt])
+}
+
+model RoutingRule {
+  id             String        @id @default(cuid())
+  organizationId String
+  name           String
+  categoryId     String?
+  departmentId   String?
+  teamId         String?
+  priority       Int           @default(100)
+  isActive       Boolean       @default(true)
+  conditions     Json?
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  category       Category?     @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
+  department     Department?   @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  team           Team?         @relation(fields: [organizationId, teamId], references: [organizationId, id], onDelete: Restrict)
+  regionId       String?
+  region         Region?       @relation(fields: [organizationId, regionId], references: [organizationId, id], onDelete: Restrict)
+  wardCode       String?
+  severity       ComplaintSeverity?
+  casePriority   ComplaintPriority?
+  isFallback     Boolean       @default(false)
+  assignments    Assignment[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([organizationId, id])
+  @@index([organizationId, isActive, priority])
+}
+
+model SLAPolicy {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  name               String
+  categoryId         String?
+  departmentId       String?
+  severity           ComplaintSeverity?
+  priority           ComplaintPriority?
+  responseMinutes    Int
+  resolutionMinutes  Int
+  isActive           Boolean      @default(true)
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  category           Category?    @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
+  department         Department?  @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Restrict)
+  cases              ComplaintCase[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive, priority, categoryId])
+  @@index([organizationId, departmentId, severity, priority])
+}
+
+model Escalation {
+  id                String        @id @default(cuid())
+  organizationId    String
+  caseId            String
+  escalatedByUserId String?
+  level             Int
+  reason            String        @db.Text
+  source            String        @default("MANUAL")
+  dedupeKey         String?
+  resolvedAt        DateTime?
+  complaintCase     ComplaintCase @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Cascade)
+  escalatedBy       User?         @relation("EscalationActor", fields: [organizationId, escalatedByUserId], references: [organizationId, id], onDelete: Restrict)
+  createdAt         DateTime      @default(now())
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, caseId, dedupeKey])
+  @@index([organizationId, caseId, createdAt])
+}
+
+model Comment {
+  id             String        @id @default(cuid())
+  organizationId String
+  caseId         String
+  authorUserId   String
+  body           String        @db.Text
+  isInternal     Boolean       @default(false)
+  complaintCase  ComplaintCase @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Cascade)
+  author         User          @relation(fields: [organizationId, authorUserId], references: [organizationId, id], onDelete: Restrict)
+  createdAt      DateTime      @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId, caseId, createdAt])
+}
+
+model Attachment {
+  id             String        @id @default(cuid())
+  organizationId String
+  caseId         String
+  uploadedById   String
+  fileName       String
+  contentType    String
+  storageKey     String
+  sizeBytes      Int
+  complaintCase  ComplaintCase @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Cascade)
+  uploadedBy     User          @relation(fields: [organizationId, uploadedById], references: [organizationId, id], onDelete: Restrict)
+  createdAt      DateTime      @default(now())
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, storageKey])
+  @@index([organizationId, caseId, createdAt])
+}
+
+model StatusHistory {
+  id             String           @id @default(cuid())
+  organizationId String
+  caseId         String
+  changedById    String
+  fromStatus     ComplaintStatus?
+  toStatus       ComplaintStatus
+  note           String?
+  complaintCase  ComplaintCase    @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Cascade)
+  changedBy      User             @relation(fields: [organizationId, changedById], references: [organizationId, id], onDelete: Restrict)
+  createdAt      DateTime         @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId, caseId, createdAt])
+}
+
+model Notification {
+  id             String        @id @default(cuid())
+  organizationId String
+  userId         String
+  caseId         String?
+  type           String
+  payload        Json
+  readAt         DateTime?
+  dedupeKey      String?
+  complaintCase  ComplaintCase? @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Cascade)
+  user           User          @relation(fields: [organizationId, userId], references: [organizationId, id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId, userId, readAt, createdAt])
+  @@unique([organizationId, userId, dedupeKey])
+}
+
+model AutomationRun {
+  id             String       @id @default(cuid())
+  organizationId String
+  jobName        String
+  status         String       @default("RUNNING")
+  startedAt      DateTime     @default(now())
+  finishedAt     DateTime?
+  processedCount Int          @default(0)
+  errorCount     Int          @default(0)
+  result         Json?
+  error          String?      @db.Text
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, id])
+  @@index([organizationId, jobName, startedAt])
+}
+
+model AuditLog {
+  id             String         @id @default(cuid())
+  organizationId String
+  actorUserId    String?
+  caseId         String?
+  action         String
+  entityType     String
+  entityId       String
+  metadata       Json
+  ipAddress      String?
+  userAgent      String?
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor          User?          @relation("AuditActor", fields: [organizationId, actorUserId], references: [organizationId, id], onDelete: Restrict)
+  complaintCase  ComplaintCase? @relation("CaseAudit", fields: [organizationId, caseId], references: [organizationId, id], onDelete: Restrict)
+  createdAt      DateTime       @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId, entityType, entityId, createdAt])
+  @@index([organizationId, actorUserId, createdAt])
+  @@index([organizationId, caseId, createdAt])
+}
+
+model Feedback {
+  id               String         @id @default(cuid())
+  organizationId   String
+  caseId           String
+  citizenProfileId String
+  rating           Int
+  comment          String?
+  complaintCase    ComplaintCase  @relation(fields: [organizationId, caseId], references: [organizationId, id], onDelete: Cascade)
+  citizenProfile   CitizenProfile @relation(fields: [organizationId, citizenProfileId], references: [organizationId, id], onDelete: Restrict)
+  createdAt        DateTime       @default(now())
+
+  @@unique([organizationId, caseId])
+  @@index([organizationId, rating, createdAt])
+}
